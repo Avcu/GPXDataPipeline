@@ -9,3 +9,11 @@ gpx_env
 my_geo_data
 data
 .DS_Store
+
+# Apache Airflow
+airflow/logs/
+airflow/*.generated
+airflow/*.db
+airflow/*.db-shm
+airflow/*.db-wal
+

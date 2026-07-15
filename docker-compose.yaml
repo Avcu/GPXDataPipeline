@@ -1,0 +1,8 @@
+services:
+  airflow:
+    image: gpxdatapipeline:latest
+    volumes:
+      - ./airflow:/opt/airflow
+    ports:
+      - "8080:8080"
+    command: airflow standalone
