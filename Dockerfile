@@ -6,3 +6,4 @@ RUN apt-get update && \
     apt-get clean
 
 USER airflow
+RUN pip install --no-cache-dir gpxpy
