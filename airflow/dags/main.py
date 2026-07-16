@@ -10,9 +10,16 @@ from datetime import datetime
 from functions import *
 
 _OUTPUT_LEN = 60
-_RUN_KM_H_THRESHOLD = 12
+_RUN_KM_H_THRESHOLD = 15
 
-LOCATIONS = {"LA, USA": (34.01842, -118.29528), "Ankara, TR": (39.86538, 32.74836), "Manisa, TR": (38.73484, 27.56861)}
+LOCATIONS = {
+    "Los Angeles, CA": (34.01842, -118.29528), 
+    "Ankara, TR": (39.86538, 32.74836), 
+    "Manisa, TR": (38.73484, 27.56861),
+    "Seattle, WA": (47.60785, -122.33651),
+    "Toronto, ON": (43.67282, -79.40001),
+    "New York, NY": (40.72544, -73.99678)
+    }
 GEO_DATA_INPUT = os.path.join("geo_data", "gpx_input_files")
 GEO_DATA_OUTPUT = os.path.join("geo_data", "results")
 
