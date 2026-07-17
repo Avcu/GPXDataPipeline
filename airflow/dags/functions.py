@@ -44,23 +44,33 @@ def find_location(lat, long, LOCATIONS):
             min_loc = k
     return min_loc
 
-def extract_statistics(data_dict, type="running"):
+def extract_statistics(data_dict, locations, type="running"):
     statistics_dict = {}
     statistics_dict['num_track'] = 0
     statistics_dict['tot_distance_km'] = 0
-    statistics_dict['track_calendar'] = {}
+    statistics_dict['cities'] = {
+        city: {
+            'tot_distance_km': 0.0,
+            'num_track': 0
+        }
+        for city in locations.keys()
+    }
     
     for v in data_dict.values():
-        if v['tracks'][0]['type'] == type:
+        if v.get('tracks') and v['tracks'][0]['type'] == type:
             statistics_dict['num_track'] += 1
-            statistics_dict['tot_distance_km'] += v['tracks'][0]['tot_distance_km']
+            dist = v['tracks'][0]['tot_distance_km']
+            statistics_dict['tot_distance_km'] += dist
 
-            year_, month_ = v['tracks'][0]['year'], v['tracks'][0]['month']
-            if year_ not in statistics_dict['track_calendar']:
-                statistics_dict['track_calendar'][year_] = {}
-            if month_ not in statistics_dict['track_calendar'][year_]:
-                statistics_dict['track_calendar'][year_][month_] = 0
-            statistics_dict['track_calendar'][year_][month_] += v['tracks'][0]['tot_distance_km']
+            loc = v['tracks'][0]['location']
+            if loc in statistics_dict['cities']:
+                statistics_dict['cities'][loc]['tot_distance_km'] += dist
+                statistics_dict['cities'][loc]['num_track'] += 1
+            elif loc is not None:
+                statistics_dict['cities'][loc] = {
+                    'tot_distance_km': dist,
+                    'num_track': 1
+                }
 
     return statistics_dict
 
