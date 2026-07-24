@@ -6,59 +6,73 @@ import gpxpy.gpx
 from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
 from datetime import datetime
+from fit2gpx import StravaConverter
 
 from functions import *
 
-_OUTPUT_LEN = 60
-_RUN_KM_H_THRESHOLD = 15
-
+# Constants
+_RUN_KM_H_THRESHOLD = 15 # this is how running/walking activities are separated from biking
 LOCATIONS = {
-    "Los Angeles, CA": (34.01842, -118.29528), 
-    # "Ankara, TR": (39.86538, 32.74836), 
-    # "Manisa, TR": (38.73484, 27.56861),
-    "Seattle, WA": (47.60785, -122.33651),
-    "Toronto, ON": (43.67282, -79.40001),
-    "New York, NY": (40.72544, -73.99678)
+    "Los Angeles, CA": [(34.01842, -118.29528), 'los_angeles'],
+    "Seattle, WA": [(47.60785, -122.33651), 'seattle'],
+    "Toronto, ON": [(43.67282, -79.40001), 'toronto'],
+    "New York, NY": [(40.72544, -73.99678), 'new_york']
     }
-GEO_DATA_INPUT = os.path.join("geo_data", "gpx_input_files")
-GEO_DATA_OUTPUT = os.path.join("geo_data", "results")
+GEO_DATA_INPUT_PATH = os.path.join("geo_data", "gpx_input_files")
+STRAVA_DATA_PATH = os.path.join(GEO_DATA_INPUT_PATH, "strava")
+STRAVA_GPX_DATA_PATH = os.path.join(GEO_DATA_INPUT_PATH, "strava_gpx")
+NIKE_GPX_DATA_PATH = os.path.join(GEO_DATA_INPUT_PATH, "nike_run_club")
+
+GEO_DATA_JSON_OUTPUT_PATH = os.path.join("geo_data", "results", "json_files")
+GEO_DATA_KML_OUTPUT_PATH = os.path.join("geo_data", "results", "kml_files")
 
 def task_process_geo_data():
-    path_this = os.getcwd()
-    src_full_path = os.path.join(path_this, GEO_DATA_INPUT)
+    # STEP-1 - Process activities from different sources: Strava, Nike Run Club etc and normalize
+    print("# STEP-1 - Process activities from different sources: Strava, Nike Run Club etc and normalize")
+    strava_conv = StravaConverter(dir_in=STRAVA_DATA_PATH, dir_out=STRAVA_GPX_DATA_PATH)
 
-    # STEP-0
-    print("="*_OUTPUT_LEN)
-    print("STEP-0")
-    print("-"*_OUTPUT_LEN)
-    print("Looking for gpx files in the following path: {}".format(src_full_path))
-    gpx_files = [f for f in os.listdir(src_full_path) if f.lower().endswith('.gpx')]
+    # Unzip the zipped files
+    strava_conv.unzip_activities()
 
-    if len(gpx_files)==0:
-        assert 1==0, "No gpx files have been found, please try another source directory"
+    # Add metadata to existing GPX files
+    strava_conv.add_metadata_to_gpx()
+
+    # Convert FIT to GPX files
+    strava_conv.strava_fit_to_gpx()
+
+    # STEP-2 - Find the list of generated GPX files
+    print("STEP-2 - Find the list of generated GPX files")
+    gpx_source_dirs = [STRAVA_GPX_DATA_PATH, NIKE_GPX_DATA_PATH]
+    print("Looking for gpx files in the following paths: {}".format(gpx_source_dirs))
+    gpx_files = [
+        os.path.join(src_dir, f)
+        for src_dir in gpx_source_dirs
+        if os.path.isdir(src_dir)
+        for f in os.listdir(src_dir)
+        if f.lower().endswith('.gpx')
+    ]
+
+    if len(gpx_files) == 0:
+        assert 1==0, "No gpx files have been found!"
     else:
         print("{} gpx files have been found!".format(len(gpx_files)))
-    print("-"*_OUTPUT_LEN)
 
-    # STEP-1
-    print("="*_OUTPUT_LEN)
-    print("STEP-1")
-    print("-"*_OUTPUT_LEN)
-    print("Iterating through the detected gpx files...")
+    # STEP-3 - Read GPX files
+    print("STEP-3 - Read GPX files")
 
     num_file = len(gpx_files)
     track_data = {}
-    for file_idx in range(num_file): # num_file
+    for file_idx in range(num_file):
         track_data[file_idx] = {}
-        track_data[file_idx]['file_name'] = gpx_files[file_idx]
+        track_data[file_idx]['file_name'] = os.path.basename(gpx_files[file_idx])
         print('File number: {} and name: {}'.format(file_idx, gpx_files[file_idx]))
 
         # load the data
-        cur_gpx_file = open(os.path.join(src_full_path, gpx_files[file_idx]), 'r')
+        cur_gpx_file = open(gpx_files[file_idx], 'r')
         cur_gpx = gpxpy.parse(cur_gpx_file)
 
         # iterate through tracks
-        track_data[file_idx]['tracks'] = []
+        track_data[file_idx]['tracks'] = None
         for track in cur_gpx.tracks:
 
             track_dict = {}
@@ -112,46 +126,41 @@ def task_process_geo_data():
             else:
                 track_dict['type'] = 'running'
 
-            track_data[file_idx]['tracks'].append(track_dict)
+            track_data[file_idx]['tracks'] = track_dict
 
-            print("--> Location: {}".format(loc_))
+            print("--> Location: {}".format(track_dict['location']))
             print("--> Date: {}-{}-{}".format(track_dict['year'], track_dict['month'], track_dict['day']))
             print("--> Total distance in km: {} and total time in min: {}, average speed: {} km/h".format(tot_distance, tot_time/60, tot_distance/(tot_time/3600) if tot_time > 0 else 0))
 
-    # STEP-2
-    print("="*_OUTPUT_LEN)
-    print("STEP-2")
-    print("-"*_OUTPUT_LEN)
-    print("Extract the statistics and save as a JSON file...")
+    # STEP-4 - Extract the statistics and save as JSON file
+    print("STEP-4 - Extract the statistics and save as JSON file")
 
     running_stats = extract_statistics(track_data, LOCATIONS, type='running')
     biking_stats = extract_statistics(track_data, LOCATIONS, type='biking')
 
     # Ensure the directory exists
-    os.makedirs(GEO_DATA_OUTPUT, exist_ok=True)
+    os.makedirs(GEO_DATA_JSON_OUTPUT_PATH, exist_ok=True)
 
-    with open(f"{GEO_DATA_OUTPUT}/running_stats.json", "w") as f:
+    with open(f"{GEO_DATA_JSON_OUTPUT_PATH}/running_stats.json", "w") as f:
         json.dump(running_stats, f)
-    with open(f"{GEO_DATA_OUTPUT}/biking_stats.json", "w") as f:
+    with open(f"{GEO_DATA_JSON_OUTPUT_PATH}/biking_stats.json", "w") as f:
         json.dump(biking_stats, f)
 
-    print("Statistics are saved as JSON file.")
+    # STEP-5 - Create KML files by city
+    print("STEP-5 - Create KML files by city")
 
-    # STEP-3
-    print("="*_OUTPUT_LEN)
-    print("STEP-3")
-    print("-"*_OUTPUT_LEN)
-    print("Create KML file...")
+    # Ensure the directory exists
+    os.makedirs(GEO_DATA_KML_OUTPUT_PATH, exist_ok=True)
 
-    running_kml = create_kml_str(track_data, type='running')
-    biking_kml = create_kml_str(track_data, type='biking')
+    for k, v in LOCATIONS.items():
+        running_kml = create_kml_str(track_data, k, type='running')
+        biking_kml = create_kml_str(track_data, k, type='biking')
 
-    print("Saving the KML file...")
-    with open(f"{GEO_DATA_OUTPUT}/tracks_run.kml", "w") as f:
-        f.write(running_kml)
-    with open(f"{GEO_DATA_OUTPUT}/tracks_bike.kml", "w") as f:
-        f.write(biking_kml)
-    print("KML files are saved")
+        print("Saving the KML file for {}.".format(k))
+        with open(f"{GEO_DATA_KML_OUTPUT_PATH}/tracks_run_{v[1]}.kml", "w") as f:
+            f.write(running_kml)
+        with open(f"{GEO_DATA_KML_OUTPUT_PATH}/tracks_bike_{v[1]}.kml", "w") as f:
+            f.write(biking_kml)
 
     
 # Define the DAG

@@ -31,14 +31,14 @@ def calculateDistanceInKM(point1, point2):
     d = sin(lat * 0.5) ** 2 + cos(lat1) * cos(lat2) * sin(lng * 0.5) ** 2
 
     return 2 * _AVG_EARTH_RADIUS_KM * asin(sqrt(d))
-
+    
 def find_location(lat, long, LOCATIONS):
     num_loc = len(LOCATIONS)
     assert num_loc > 0, "Please provide a LOCATIONS array!"
     min_dist = float('inf')
     min_loc = None
     for k, v in LOCATIONS.items():
-        cur_dist = calculateDistanceInKM((lat, long), v)
+        cur_dist = calculateDistanceInKM((lat, long), v[0])
         if cur_dist < min_dist:
             min_dist = cur_dist
             min_loc = k
@@ -57,12 +57,12 @@ def extract_statistics(data_dict, locations, type="running"):
     }
     
     for v in data_dict.values():
-        if v.get('tracks') and v['tracks'][0]['type'] == type:
+        if v.get('tracks') and v['tracks']['type'] == type:
             statistics_dict['num_track'] += 1
-            dist = v['tracks'][0]['tot_distance_km']
+            dist = v['tracks']['tot_distance_km']
             statistics_dict['tot_distance_km'] += dist
 
-            loc = v['tracks'][0]['location']
+            loc = v['tracks']['location']
             if loc in statistics_dict['cities']:
                 statistics_dict['cities'][loc]['tot_distance_km'] += dist
                 statistics_dict['cities'][loc]['num_track'] += 1
@@ -74,35 +74,32 @@ def extract_statistics(data_dict, locations, type="running"):
 
     return statistics_dict
 
-def create_kml_str(data_dict, type="running"):
+def create_kml_str(data_dict, location, type="running"):
     kml_str = ""
-    print("-- Adding the head...")
     kml_str += """<?xml version="1.0" encoding="UTF-8"?>
     <kml xmlns="http://earth.google.com/kml/2.1">
 
     <Document>
     <name>My Tracks</name>
-    <description>Running and biking tracks in Los Angeles</description>
     """
+    kml_str += "<description>Running and biking tracks in {}</description>\n".format(location)
 
     for v in data_dict.values():
-        if v['tracks'][0]['type'] == type:
+        if v['tracks']['type'] == type and v['tracks']['location'] == location:
             placemarker_str = "<Placemark>\n"
             placemarker_str += "<name>"
             placemarker_str += "dist: {:.2f}km, time: {:.1f}min".format( 
-                                v['tracks'][0]['tot_distance_km'], v['tracks'][0]['tot_time_min'])
+                                v['tracks']['tot_distance_km'], v['tracks']['tot_time_min'])
             placemarker_str += "</name>\n"
 
             placemarker_str += """<LineString><altitudeMode>relative</altitudeMode><coordinates>\n"""
             
-            for i in range(len(v['tracks'][0]['points'])):
-                lat, long, _ = v['tracks'][0]['points'][i]
-                placemarker_str += "{},{},{}\n".format(long, lat, 0)
+            for i in range(len(v['tracks']['points'])):
+                lat, long, _ = v['tracks']['points'][i]
+                placemarker_str += "{:.6f},{:.6f},{}\n".format(long, lat, 0)
 
             placemarker_str += """</coordinates></LineString></Placemark>\n\n"""
             kml_str += placemarker_str
-
-    print("-- Adding the tail...")
     kml_str += """</Document>
     </kml>
     """
